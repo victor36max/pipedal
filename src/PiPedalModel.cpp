@@ -2002,6 +2002,23 @@ void PiPedalModel::SendSetPatchProperty(
     if (pedalboardItem)
     {
         std::shared_ptr<Lv2PluginInfo> pluginInfo = GetPluginInfo(pedalboardItem->uri_);
+        for (const auto &property : pluginInfo->patchProperties())
+        {
+            if (property.uri() == propertyUri && property.writable() &&
+                property.type() == LV2_ATOM__Float && value.is_number())
+            {
+                // JUCE deliberately does not echo host-originated changes.
+                // Keep numeric controls in the existing persisted patch map,
+                // which is also used when restoring snapshots.
+                std::string json = value.to_string();
+                pedalboardItem->pathProperties_[propertyUri] = json;
+                audioHost->OnNotifyPathPatchPropertyReceived(instanceId, propertyUri, json);
+                for (auto &subscriber : subscribers)
+                    subscriber->OnNotifyPathPatchPropertyChanged(instanceId, propertyUri, json);
+                SetPresetChanged(clientId, true);
+                break;
+            }
+        }
         auto pipedalUi = pluginInfo->piPedalUI();
         if (pipedalUi)
         {
@@ -2076,6 +2093,23 @@ void PiPedalModel::SendGetPatchProperty(
     std::function<void(const std::string &jsonResult)> onSuccess,
     std::function<void(const std::string &error)> onError)
 {
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        auto item = pedalboard.GetItem(instanceId);
+        auto plugin = item ? GetPluginInfo(item->uri()) : nullptr;
+        if (plugin)
+        {
+            for (const auto &property : plugin->patchProperties())
+            {
+                if (property.uri() == uri && property.type() == LV2_ATOM__Float &&
+                    item->pathProperties_.contains(uri) && item->pathProperties_.at(uri) != "null")
+                {
+                    onSuccess(item->pathProperties_.at(uri));
+                    return;
+                }
+            }
+        }
+    }
     std::function<void(RealtimePatchPropertyRequest *)> onRequestComplete{
         [this](RealtimePatchPropertyRequest *pParameter)
         {
@@ -2096,6 +2130,23 @@ void PiPedalModel::SendGetPatchProperty(
                 {
                     if (pParameter->errorMessage != nullptr)
                     {
+                        // JUCE publishes numeric patch:Set notifications but does
+                        // not answer patch:Get. Use only values actually reported
+                        // by the plugin, after the normal request has timed out.
+                        auto item = this->pedalboard.GetItem(pParameter->instanceId);
+                        if (item && std::string(pParameter->errorMessage) == "Plugin did not respond.")
+                        {
+                            auto &properties = item->PatchProperties();
+                            auto value = properties.find(pParameter->uri);
+                            if (value != properties.end() &&
+                                value->second.get()->type == pluginHost.GetLv2Urid(LV2_ATOM__Float))
+                            {
+                                if (pParameter->onSuccess)
+                                    pParameter->onSuccess(audioHost->AtomToJson(value->second.get()));
+                                delete pParameter;
+                                return;
+                            }
+                        }
                         if (pParameter->onError)
                         {
                             pParameter->onError(pParameter->errorMessage);
@@ -2365,6 +2416,9 @@ void PiPedalModel::UpdateDefaults(SnapshotValue &snapshotValue, const Pedalboard
             {
                 validFileProperties.insert(fileProperty->patchProperty());
             }
+            for (const auto &property : pPlugin->patchProperties())
+                if (property.writable() && property.type() == LV2_ATOM__Float)
+                    validFileProperties.insert(property.uri());
             for (auto i = snapshotValue.pathProperties_.begin(); i != snapshotValue.pathProperties_.end(); /**/)
             {
                 if (!validFileProperties.contains(i->first))
@@ -2485,6 +2539,17 @@ void PiPedalModel::UpdateDefaults(PedalboardItem *pedalboardItem, std::unordered
                 {
                     // make sure each pedalboard item has a complete list of path properties, even if it doesn't yet have values.
                     pedalboardItem->pathProperties_[fileProperty->patchProperty()] = "null";
+                }
+            }
+            for (const auto &property : pPlugin->patchProperties())
+            {
+                if (property.writable() && property.type() == LV2_ATOM__Float)
+                {
+                    validFileProperties.insert(property.uri());
+                    if (!pedalboardItem->lv2State().isValid_ &&
+                        !pedalboardItem->pathProperties_.contains(property.uri()))
+                        pedalboardItem->pathProperties_[property.uri()] =
+                            json_variant(property.defaultValue()).to_string();
                 }
             }
             for (auto i = pedalboardItem->pathProperties_.begin(); i != pedalboardItem->pathProperties_.end(); /**/)
@@ -2680,6 +2745,21 @@ void PiPedalModel::OnPatchSetReply(uint64_t instanceId, LV2_URID patchSetPropert
             else
             {
                 properties[propertyUri] = std::move(atomObject);
+            }
+            if (atomValue->type == pluginHost.GetLv2Urid(LV2_ATOM__Float))
+            {
+                auto plugin = GetPluginInfo(item->uri());
+                if (plugin)
+                    for (const auto &property : plugin->patchProperties())
+                        if (property.uri() == propertyUri && property.type() == LV2_ATOM__Float)
+                        {
+                            std::string json = audioHost->AtomToJson(atomValue);
+                            item->pathProperties_[propertyUri] = json;
+                            audioHost->OnNotifyPathPatchPropertyReceived(instanceId, propertyUri, json);
+                            for (auto &subscriber : subscribers)
+                                subscriber->OnNotifyPathPatchPropertyChanged(instanceId, propertyUri, json);
+                            break;
+                        }
             }
         }
         if (audioHost)
