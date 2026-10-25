@@ -98,6 +98,8 @@ Lv2Effect::Lv2Effect(
     this->bypassStartingSamples = (uint32_t)(pHost->GetSampleRate() * BYPASS_TIME_S);
 
     this->bypass = pedalboardItem.isEnabled();
+    // NAM has no effect tail; keep normal bypass processing for other plugins.
+    suspendWhenBypassed = info_->uri() == "http://two-play.com/plugins/toob-nam";
 
     this->workerThread = std::make_unique<HostWorkerThread>();
     if (info_->WantsWorkerThread())
@@ -992,6 +994,10 @@ void Lv2Effect::RunWithBufferStaging(uint32_t samples, RealtimeRingBufferWriter 
     {
         lv2_atom_forge_pop(&this->inputForgeRt, &input_frame);
 
+    }
+    if (SuspendBypassedProcessing(samples)) return;
+    if (this->inputAtomBuffers.size() != 0)
+    {
         LV2_Atom_Sequence *controlInput = (LV2_Atom_Sequence *)GetAtomInputBuffer(0);
         copyAtomBufferEventSequence(controlInput, this->stagedInputForgeRt);
     }
@@ -1186,6 +1192,59 @@ inline void Lv2Effect::MixOutput(uint32_t samples, RealtimeRingBufferWriter *rea
     RelayPatchSetMessages(this->instanceId, realtimeRingBufferWriter);
 }
 
+// Keep control/state traffic alive while avoiding continuous DSP on bypassed
+// pedals. "bypass" is historically named: true means the pedal is enabled.
+bool Lv2Effect::SuspendBypassedProcessing(uint32_t samples)
+{
+    if (!suspendWhenBypassed) return false;
+    if (bypass)
+    {
+        bypassControlChanged = false;
+        return false;
+    }
+    bool needsRun = bypassControlChanged;
+    bypassControlChanged = false;
+    // Deliver asynchronous model/file loads even while audio DSP is suspended.
+    if (worker && worker->EmitResponses()) needsRun = true;
+    for (const auto *buffer : inputAtomBuffers)
+    {
+        const auto *sequence = reinterpret_cast<const LV2_Atom_Sequence *>(buffer);
+        if (sequence->atom.size > sizeof(LV2_Atom_Sequence_Body)) needsRun = true;
+    }
+    if (stagedInputAtomBufferPointer &&
+        reinterpret_cast<const LV2_Atom_Sequence *>(stagedInputAtomBufferPointer)->atom.size >
+            sizeof(LV2_Atom_Sequence_Body)) needsRun = true;
+    // Finish a staged block so queued events are not discarded.
+    if (stagingInputIx != 0) needsRun = true;
+    if (bypassControlIndex == -1)
+    {
+        if (bypassSamplesRemaining != 0 || currentBypass != 0) needsRun = true;
+    }
+    else if (nativeBypassSamplesRemaining != 0)
+    {
+        nativeBypassSamplesRemaining -= std::min(nativeBypassSamplesRemaining, samples);
+        needsRun = true;
+    }
+    if (needsRun) return false;
+
+    // Do not replay stale staging output after the pedal is enabled again.
+    stagingOutputIx = stagingBufferSize;
+    for (size_t channel = 0; channel < outputAudioBuffers.size(); ++channel)
+    {
+        float *output = outputAudioBuffers[channel];
+        if (inputAudioBuffers.empty())
+        {
+            std::fill(output, output + samples, 0.0f);
+        }
+        else
+        {
+            const float *input = inputAudioBuffers[std::min(channel, inputAudioBuffers.size() - 1)];
+            if (input != output) std::copy(input, input + samples, output);
+        }
+    }
+    return true;
+}
+
 void Lv2Effect::Run(uint32_t samples, RealtimeRingBufferWriter *realtimeRingBufferWriter)
 {
     // close off the atom input frame.
@@ -1193,6 +1252,7 @@ void Lv2Effect::Run(uint32_t samples, RealtimeRingBufferWriter *realtimeRingBuff
     {
         lv2_atom_forge_pop(&this->inputForgeRt, &input_frame);
     }
+    if (SuspendBypassedProcessing(samples)) return;
     lilv_instance_run(pInstance, samples);
 
     if (worker)
