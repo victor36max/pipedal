@@ -29,7 +29,8 @@ function setup() {
 }
 test('short tap clicks once and cancels compatibility click', () => {
     const s = setup(); s.emit('touchstart'); s.time(100); const end = s.emit('touchend');
-    assert.equal(s.clicks(), 1); assert.ok(end.prevented && end.stopped);
+    assert.equal(s.clicks(), 1); assert.ok(end.prevented);
+    assert.equal(end.stopped, false, "MUI must receive touchend to stop its ripple");
     s.emit('touchend'); assert.equal(s.clicks(), 1);
     assert.equal(s.listeners.get('touchend').options.passive, false);
 });

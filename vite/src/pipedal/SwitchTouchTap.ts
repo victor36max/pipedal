@@ -32,7 +32,7 @@ export function installSwitchTouchTap(root: HTMLElement, now = () => performance
         if (!valid || !event.cancelable || !current.input.isConnected || current.input.disabled
             || inputAt(event.target) !== current.input) return;
         event.preventDefault(); // Suppress the later synthesized click (one toggle only).
-        event.stopPropagation();
+        // Let touchend reach MUI so its ripple/pressed state is released.
         current.input.click(); // Preserve the normal checkbox/React onChange path.
     };
     root.addEventListener('touchstart', start, { capture: true, passive: true });
