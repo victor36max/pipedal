@@ -203,6 +203,10 @@ namespace pipedal
         double currentBypass = 0;
         double currentBypassDx = 0;
         uint32_t bypassSamplesRemaining = 0;
+        uint32_t nativeBypassSamplesRemaining = 0;
+        bool bypassControlChanged = true;
+        bool suspendWhenBypassed = false;
+        bool SuspendBypassedProcessing(uint32_t samples);
 
         bool requestStateChangedNotification = false;
 
@@ -345,6 +349,7 @@ namespace pipedal
                 SetBypass(value != 0);
             } else {
                 controlValues[index] = value;
+                bypassControlChanged = true;
             }
         }
 
@@ -375,6 +380,8 @@ namespace pipedal
             if (bypass != this->bypass)
             {
                 this->bypass = bypass;
+                bypassControlChanged = true;
+                nativeBypassSamplesRemaining = bypassStartingSamples;
                 if (bypassControlIndex == -1) {
                     BypassDezipperTo(bypass? 1.0f: 0.0f);
                 } else {
