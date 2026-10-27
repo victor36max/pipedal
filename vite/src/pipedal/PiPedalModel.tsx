@@ -2967,10 +2967,11 @@ export class PiPedalModel //implements PiPedalModel
         instanceId: number, propertyUri: string, jsonObjectString: string
     ) {
         let pedalboard = this.pedalboard.get();
-        let pedalboardItem = pedalboard.getItem(instanceId);
-        if (pedalboardItem) {
-            pedalboardItem.pathProperties[propertyUri] = jsonObjectString;
-        }
+        // Updates can arrive after deletion/preset replacement, or before the
+        // initial board has arrived. They must not fail the socket dispatcher.
+        const pedalboardItem = pedalboard.tryGetItem(instanceId);
+        if (!pedalboardItem) return;
+        pedalboardItem.pathProperties[propertyUri] = jsonObjectString;
         // JUCE does not echo host-originated numeric patch:Set messages. Deliver
         // the cached-value broadcast to numeric controls in every open client.
         // Keep file/structured properties on their existing notification path.

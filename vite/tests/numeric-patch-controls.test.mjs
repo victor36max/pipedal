@@ -25,7 +25,7 @@ function modelHarness() {
         .map(name => fragment('PiPedalModel.tsx', name, ts.SyntaxKind.MethodDeclaration)).join('\n');
     const listener = fragment('PiPedalModel.tsx', 'PatchPropertyListenerItem', ts.SyntaxKind.ClassDeclaration);
     const model = compile(`${listener}\nclass Harness {${methods}}\nreturn new Harness();`);
-    Object.assign(model, {nextListenHandle: 1, monitorPatchPropertyListeners: [], pedalboard: {get: () => ({getItem: () => item})}});
+    Object.assign(model, {nextListenHandle: 1, monitorPatchPropertyListeners: [], pedalboard: {get: () => ({getItem: () => item, tryGetItem: () => item})}});
     return {model, item};
 }
 test('host numeric broadcasts reach only matching instance/property, and cancellation works', () => {
@@ -72,4 +72,14 @@ test('drag preview and release both send patch writes through the rendered contr
     assert.deepEqual(writes, [[7, 'urn:gain', 0.7]], 'audio changes before release');
     rendered.props.onChange(0.8);
     assert.deepEqual(writes[1], [7, 'urn:gain', 0.8]);
+});
+
+test('late notifications for a removed pedal are ignored without notifying stale listeners', () => {
+    const {model} = modelHarness();
+    model.pedalboard = {get: () => ({
+        getItem: () => {throw new Error('Item not found.');},
+        tryGetItem: () => null
+    })};
+    model.monitorPatchProperty(7, 'urn:gain', () => assert.fail('stale listener'));
+    assert.doesNotThrow(() => model.handleNotifyPathPatchPropertyChanged(7, 'urn:gain', '0.75'));
 });
