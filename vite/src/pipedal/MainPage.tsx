@@ -33,7 +33,7 @@ import {
 } from './Pedalboard';
 import InputIcon from '@mui/icons-material/Input';
 import LoadPluginDialog from './LoadPluginDialog';
-import BypassSwitch from './BypassSwitch';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 
 import PedalboardView from './PedalboardView';
@@ -680,7 +680,7 @@ export const MainPage =
                                         <div style={{ display: bypassVisible ? "block" : "none", width: this.state.splitControlBar ? undefined : 60 }} >
                                             <ToolTipEx title="Bypass"
                                             >
-                                                <BypassSwitch color="secondary" checked={bypassChecked} onChange={this.handleEnableCurrentItemChanged} />
+                                                <Switch color="secondary" checked={bypassChecked} onChange={this.handleEnableCurrentItemChanged} />
                                             </ToolTipEx>
                                         </div>
                                     </div>

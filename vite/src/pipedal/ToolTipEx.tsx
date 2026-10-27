@@ -175,7 +175,7 @@ function ToolTipEx(props: ToolTipExProps) {
             effectiveTitle = title; // Show regular title if no value tooltip
         }
     }
-    function handleClickCapture(event: React.MouseEvent<HTMLDivElement>) {
+    function handleClick(event: React.MouseEvent<HTMLDivElement>) {
         setLongPressLeaving(false);
         setIsLongPress(false);
         setOpen(false);
@@ -183,9 +183,9 @@ function ToolTipEx(props: ToolTipExProps) {
     }
     return (
         <div style={{ display: 'inline-block' }}
-            onClickCapture={(e) => {
-                // console.log("ToolTipEx: onClickCapture");
-                handleClickCapture(e);
+            onClick={(e) => {
+                // Clean up after input change extraction, not during click capture.
+                handleClick(e);
             }}
 
             onMouseEnter={(e) => {
