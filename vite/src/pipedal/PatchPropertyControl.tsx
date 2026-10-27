@@ -71,7 +71,7 @@ export default function PatchPropertyControl(props: PatchPropertyControlProps) {
             uiControl={uiControl}
             value={value}
             onChange={setPatchValue}
-            onPreviewChange={() => { }}
+            onPreviewChange={setPatchValue}
             requestIMEEdit={() => { }}
         />
     );
