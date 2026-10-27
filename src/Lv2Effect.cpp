@@ -24,6 +24,7 @@
 #include <lv2/lv2plug.in/ns/ext/worker/worker.h>
 #include <lilv/lilv.h>
 #include "lv2/atom/atom.h"
+#include "lv2/buf-size/buf-size.h"
 #include "lv2/atom/util.h"
 // #include "lv2.h"
 #include "lv2/log/log.h"
@@ -180,6 +181,11 @@ Lv2Effect::Lv2Effect(
     }
     this->features.push_back(logFeature.GetFeature());
     this->features.push_back(optionsFeature.GetFeature());
+    // OptionsFeature supplies the maximum block length used by this effect.
+    // JUCE checks this marker at instantiation as well as reading the option.
+    static const LV2_Feature boundedBlockLengthFeature{
+        LV2_BUF_SIZE__boundedBlockLength, nullptr};
+    this->features.push_back(&boundedBlockLengthFeature);
 
     this->features.push_back(mapPathFeature.GetMapPathFeature());
     this->features.push_back(mapPathFeature.GetMakePathFeature());
