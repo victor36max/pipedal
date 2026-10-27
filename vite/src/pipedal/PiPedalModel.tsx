@@ -312,13 +312,15 @@ class MidiEventListener {
 export type PatchPropertyListener = (instanceId: number, propertyUri: string, atomObject: any) => void;
 
 class PatchPropertyListenerItem {
-    constructor(handle: number, instanceId: number, callback: PatchPropertyListener) {
+    constructor(handle: number, instanceId: number, propertyUri: string, callback: PatchPropertyListener) {
         this.handle = handle;
         this.instanceId = instanceId;
+        this.propertyUri = propertyUri;
         this.callback = callback;
     }
     handle: number;
     instanceId: number;
+    propertyUri: string;
     callback: PatchPropertyListener;
 };
 
@@ -2944,7 +2946,7 @@ export class PiPedalModel //implements PiPedalModel
     ): ListenHandle {
         let handle = this.nextListenHandle++;
 
-        this.monitorPatchPropertyListeners.push(new PatchPropertyListenerItem(handle, instanceId, onReceived));
+        this.monitorPatchPropertyListeners.push(new PatchPropertyListenerItem(handle, instanceId, propertyUri, onReceived));
 
         this.webSocket?.send("monitorPatchProperty", { clientHandle: handle, instanceId: instanceId, propertyUri: propertyUri, });
         return {
@@ -2969,8 +2971,18 @@ export class PiPedalModel //implements PiPedalModel
         if (pedalboardItem) {
             pedalboardItem.pathProperties[propertyUri] = jsonObjectString;
         }
-        // No NOT notify monitorPatchProperty listeners, because they extpect objects not strings, 
-        // AND they will a NotifyPatchPropertychanged message anyway.
+        // JUCE does not echo host-originated numeric patch:Set messages. Deliver
+        // the cached-value broadcast to numeric controls in every open client.
+        // Keep file/structured properties on their existing notification path.
+        let value: unknown;
+        try { value = JSON.parse(jsonObjectString); } catch { return; }
+        if (typeof value === "number" && Number.isFinite(value)) {
+            for (const listener of [...this.monitorPatchPropertyListeners]) {
+                if (listener.instanceId === instanceId && listener.propertyUri === propertyUri) {
+                    listener.callback(instanceId, propertyUri, value);
+                }
+            }
+        }
 
     }
     private handleNotifyPatchProperty(clientHandle: number, instanceId: number, propertyUri: string, jsonObject: any) {

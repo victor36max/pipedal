@@ -538,7 +538,7 @@ const PluginControl =
 
             resetToDefaultValue(uiControl: UiControl): void {
                 let value = uiControl.default_value;
-                this.model.setPedalboardControl(this.props.instanceId, uiControl.symbol, value);
+                this.props.onChange(value);
             }
             onPointerDoubleTap() {
                 let uiControl = this.props.uiControl;
