@@ -713,6 +713,12 @@ const PluginControlView =
                 // lv2:index order, with the property label as a tiebreaker.
                 const numericPatchProperties = plugin.patchProperties
                     .filter((property) => property.writable && property.isNumeric())
+                    // These JUCE exports also expose bypass as a patch parameter,
+                    // but their enabled control port takes precedence each block.
+                    // Use PiPedal's existing enable switch for that single control.
+                    .filter((property) => !(plugin.uri.startsWith("https://stomptones.com/")
+                        && property.uri.endsWith(":bypass")
+                        && plugin.controls.some((control) => control.is_bypass || control.symbol === "enabled")))
                     .sort((left, right) => {
                         const leftIndex = left.index < 0 ? Number.MAX_SAFE_INTEGER : left.index;
                         const rightIndex = right.index < 0 ? Number.MAX_SAFE_INTEGER : right.index;
